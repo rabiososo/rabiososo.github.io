@@ -53,6 +53,486 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE." />
 <!--~~ Raw markup ~~-->
 
 
+<script>
+var iosDragDropShim = { enableEnterLeave: true, holdToDrag: 300 };
+(function(doc) {
+
+function _exposeIosHtml5DragDropShim(config) {
+  log = noop; // noOp, remove this line to enable debugging
+
+  var coordinateSystemForElementFromPoint;
+
+  var DRAG_OVER_EMIT_FREQ = 50;
+
+  function main() {
+    config = config || {};
+    if (!config.hasOwnProperty("simulateAnchorClick")) config.simulateAnchorClick = true;
+
+    coordinateSystemForElementFromPoint = navigator.userAgent.match(/OS [1-4](?:_\d+)+ like Mac/) ? "page" : "client";
+
+    var div = doc.createElement('div');
+    var dragDiv = 'draggable' in div;
+    var evts = 'ondragstart' in div && 'ondrop' in div;
+
+    var needsPatch = !(dragDiv || evts) || /iPad|iPhone|iPod|Android/.test(navigator.userAgent);
+    log((needsPatch ? "" : "not ") + "patching html5 drag drop");
+
+    if(!needsPatch) {
+      return;
+    }
+
+    if(!config.enableEnterLeave) {
+      DragDrop.prototype.synthesizeEnterLeave = noop;
+    }
+
+    if(config.holdToDrag){
+      doc.addEventListener("touchstart", touchstartDelay(config.holdToDrag), {passive:false});
+    }
+    else {
+      doc.addEventListener("touchstart", touchstart, {passive:false});
+    }
+  }
+
+  function DragDrop(event, el) {
+
+    this.dragData = {};
+    this.dragDataTypes = [];
+    this.dragImage = null;
+    this.dragImageTransform = null;
+    this.dragImageWebKitTransform = null;
+    this.customDragImage = null;
+    this.customDragImageX = null;
+    this.customDragImageY = null;
+    this.el = el || event.target;
+    this.dragOverTimer = null;
+    this.lastMoveEvent = null;
+
+    log("dragstart");
+
+    if (this.dispatchDragStart()) {
+      this.createDragImage();
+      this.listen();
+    }
+  }
+
+  DragDrop.prototype = {
+    listen: function() {
+      var move = onEvt(doc, "touchmove", this.move, this);
+      var end = onEvt(doc, "touchend", ontouchend, this);
+      var cancel = onEvt(doc, "touchcancel", cleanup, this);
+
+      function ontouchend(event) {
+        this.dragend(event, event.target);
+        cleanup.call(this);
+      }
+      function cleanup() {
+        log("cleanup");
+        this.dragDataTypes = [];
+        if (this.dragImage !== null) {
+          this.dragImage.parentNode.removeChild(this.dragImage);
+          this.dragImage = null;
+          this.dragImageTransform = null;
+          this.dragImageWebKitTransform = null;
+        }
+        this.customDragImage = null;
+        this.customDragImageX = null;
+        this.customDragImageY = null;
+        this.el = this.dragData = null;
+        return [move, end, cancel].forEach(function(handler) {
+          return handler.off();
+        });
+      }
+    },
+    move: function(event) {
+      event.preventDefault();
+      var pageXs = [], pageYs = [];
+      [].forEach.call(event.changedTouches, function(touch) {
+        pageXs.push(touch.pageX);
+        pageYs.push(touch.pageY);
+      });
+
+      var x = average(pageXs) - (this.customDragImageX || parseInt(this.dragImage.offsetWidth, 10) / 2);
+      var y = average(pageYs) - (this.customDragImageY || parseInt(this.dragImage.offsetHeight, 10) / 2);
+      this.translateDragImage(x, y);
+
+      this.synthesizeEnterLeave(event);
+      this.synthesizeOver(event);
+    },
+    // We use translate instead of top/left because of sub-pixel rendering and for the hope of better performance
+    // http://www.paulirish.com/2012/why-moving-elements-with-translate-is-better-than-posabs-topleft/
+    translateDragImage: function(x, y) {
+      var translate = "translate(" + x + "px," + y + "px) ";
+
+      if (this.dragImageWebKitTransform !== null) {
+        this.dragImage.style["-webkit-transform"] = translate + this.dragImageWebKitTransform;
+      }
+      if (this.dragImageTransform !== null) {
+        this.dragImage.style.transform = translate + this.dragImageTransform;
+      }
+    },
+    synthesizeEnterLeave: function(event) {
+      var target = elementFromTouchEvent(this.el,event)
+      if (target != this.lastEnter) {
+        if (this.lastEnter) {
+          this.dispatchLeave(event);
+        }
+        this.lastEnter = target;
+        if (this.lastEnter) {
+          this.dispatchEnter(event);
+        }
+      }
+    },
+    synthesizeOver: function(event) {
+      this.lastMoveEvent = event;
+      if(this.lastEnter && !this.dragOverTimer) {
+        this.dragOverTimer = setInterval(this.dispatchOver.bind(this), DRAG_OVER_EMIT_FREQ);
+      }
+    },
+    clearDragOverTimer: function() {
+      if(this.dragOverTimer) {
+        clearInterval(this.dragOverTimer);
+        this.dragOverTimer = null;
+      }
+    },
+    dragend: function(event) {
+
+      // we'll dispatch drop if there's a target, then dragEnd.
+      // drop comes first http://www.whatwg.org/specs/web-apps/current-work/multipage/dnd.html#drag-and-drop-processing-model
+      log("dragend");
+
+      if (this.lastEnter) {
+        this.dispatchLeave(event);
+      }
+
+      var target = elementFromTouchEvent(this.el,event)
+      if (target) {
+        log("found drop target " + target.tagName);
+        this.dispatchDrop(target, event);
+      } else {
+        log("no drop target");
+      }
+
+      var dragendEvt = doc.createEvent("Event");
+      dragendEvt.initEvent("dragend", true, true);
+      this.el.dispatchEvent(dragendEvt);
+      this.clearDragOverTimer();
+    },
+    dispatchDrop: function(target, event) {
+      var dropEvt = doc.createEvent("Event");
+      dropEvt.initEvent("drop", true, true);
+
+      var touch = event.changedTouches[0];
+      var x = touch[coordinateSystemForElementFromPoint + 'X'];
+      var y = touch[coordinateSystemForElementFromPoint + 'Y'];
+
+      var targetOffset = getOffset(target);
+
+      dropEvt.offsetX = x - targetOffset.x;
+      dropEvt.offsetY = y - targetOffset.y;
+
+      dropEvt.dataTransfer = {
+        types: this.dragDataTypes,
+        getData: function(type) {
+          return this.dragData[type];
+        }.bind(this),
+        dropEffect: "move"
+      };
+      dropEvt.preventDefault = function() {
+        // https://www.w3.org/Bugs/Public/show_bug.cgi?id=14638 - if we don't cancel it, we'll snap back
+      }.bind(this);
+
+      once(doc, "drop", function() {
+        log("drop event not canceled");
+      },this);
+
+      target.dispatchEvent(dropEvt);
+    },
+    dispatchEnter: function(event) {
+
+      var enterEvt = doc.createEvent("Event");
+      enterEvt.initEvent("dragenter", true, true);
+      enterEvt.dataTransfer = {
+        types: this.dragDataTypes,
+        getData: function(type) {
+          return this.dragData[type];
+        }.bind(this)
+      };
+
+      var touch = event.changedTouches[0];
+      enterEvt.pageX = touch.pageX;
+      enterEvt.pageY = touch.pageY;
+      enterEvt.clientX = touch.clientX;
+      enterEvt.clientY = touch.clientY;
+
+      this.lastEnter.dispatchEvent(enterEvt);
+    },
+    dispatchOver: function() {
+
+      var overEvt = doc.createEvent("Event");
+      overEvt.initEvent("dragover", true, true);
+      overEvt.dataTransfer = {
+        types: this.dragDataTypes,
+        getData: function(type) {
+          return this.dragData[type];
+        }.bind(this)
+      };
+
+      var touch = this.lastMoveEvent.changedTouches[0];
+      overEvt.pageX = touch.pageX;
+      overEvt.pageY = touch.pageY;
+      overEvt.clientX = touch.clientX;
+      overEvt.clientY = touch.clientY;
+
+      this.lastEnter.dispatchEvent(overEvt);
+    },
+    dispatchLeave: function(event) {
+
+      var leaveEvt = doc.createEvent("Event");
+      leaveEvt.initEvent("dragleave", true, true);
+      leaveEvt.dataTransfer = {
+        types: this.dragDataTypes,
+        getData: function(type) {
+          return this.dragData[type];
+        }.bind(this)
+      };
+
+      var touch = event.changedTouches[0];
+      leaveEvt.pageX = touch.pageX;
+      leaveEvt.pageY = touch.pageY;
+      leaveEvt.clientX = touch.clientX;
+      leaveEvt.clientY = touch.clientY;
+
+      this.lastEnter.dispatchEvent(leaveEvt);
+      this.lastEnter = null;
+      this.clearDragOverTimer();
+    },
+    dispatchDragStart: function() {
+      var evt = doc.createEvent("Event");
+      evt.initEvent("dragstart", true, true);
+      evt.dataTransfer = {
+        setData: function(type, val) {
+          this.dragData[type] = val;
+          if (this.dragDataTypes.indexOf(type) == -1) {
+            this.dragDataTypes[this.dragDataTypes.length] = type;
+          }
+          return val;
+        }.bind(this),
+        setDragImage: function(el, x, y){
+          this.customDragImage = el;
+          this.customDragImageX = x
+          this.customDragImageY = y
+        }.bind(this),
+        dropEffect: "move"
+      };
+      return this.el.dispatchEvent(evt);
+    },
+    createDragImage: function() {
+      if (this.customDragImage) {
+        this.dragImage = this.customDragImage.cloneNode(true);
+        duplicateStyle(this.customDragImage, this.dragImage);
+      } else {
+        this.dragImage = this.el.cloneNode(true);
+        duplicateStyle(this.el, this.dragImage);
+      }
+      this.dragImage.style.opacity = "0.5";
+      this.dragImage.style.position = "absolute";
+      this.dragImage.style.left = "0px";
+      this.dragImage.style.top = "0px";
+      this.dragImage.style.zIndex = "999999";
+
+      var transform = this.dragImage.style.transform;
+      if (typeof transform !== "undefined") {
+        this.dragImageTransform = "";
+        if (transform != "none") {
+          this.dragImageTransform = transform.replace(/translate\(\D*\d+[^,]*,\D*\d+[^,]*\)\s*/g, '');
+        }
+      }
+
+      var webkitTransform = this.dragImage.style["-webkit-transform"];
+      if (typeof webkitTransform !== "undefined") {
+        this.dragImageWebKitTransform = "";
+        if (webkitTransform != "none") {
+          this.dragImageWebKitTransform = webkitTransform.replace(/translate\(\D*\d+[^,]*,\D*\d+[^,]*\)\s*/g, '');
+        }
+      }
+
+      this.translateDragImage(-9999, -9999);
+
+      doc.body.appendChild(this.dragImage);
+    }
+  };
+
+  // delayed touch start event
+  function touchstartDelay(delay) {
+    return function(evt){
+      var el = evt.target;
+
+      do {
+        if (elementIsDraggable(el)) {
+          var heldItem = function() {
+            end.off();
+            cancel.off();
+            scroll.off();
+            touchstart(evt);
+          };
+
+          var onReleasedItem = function() {
+            end.off();
+            cancel.off();
+            scroll.off();
+            clearTimeout(timer);
+          };
+
+          var timer = setTimeout(heldItem, delay);
+
+          var end = onEvt(el, 'touchend', onReleasedItem, this);
+          var cancel = onEvt(el, 'touchcancel', onReleasedItem, this);
+          var scroll = onEvt(window, 'scroll', onReleasedItem, this);
+          break;
+        }
+      } while ((el = el.parentNode) && el !== doc.body);
+    };
+  };
+
+  // event listeners
+  function touchstart(evt) {
+    var el = evt.target;
+    do {
+      if (elementIsDraggable(el)) {
+        handleTouchStartOnAnchor(evt, el);
+
+        evt.preventDefault();
+        new DragDrop(evt,el);
+        break;
+      }
+    } while((el = el.parentNode) && el !== doc.body);
+  }
+
+  function elementIsDraggable(el){
+    // if an element is not draggable either explicitly or implicitly we can exit immediately
+    if(!el.draggable) return false;
+
+    // if an element has been explicitly set to be draggable we're good to go
+    if(el.hasAttribute("draggable")) return true;
+
+    // otherwise we investigate the implicit option
+    return (!config.requireExplicitDraggable);
+  }
+
+  function elementIsAnchor(el){
+    return el.tagName.toLowerCase() == "a";
+  }
+
+  function handleTouchStartOnAnchor(evt, el){
+    // If draggable isn't explicitly set for anchors, then simulate a click event.
+    // Otherwise plain old vanilla links will stop working.
+    // https://developer.mozilla.org/en-US/docs/Web/Guide/Events/Touch_events#Handling_clicks
+    if (!el.hasAttribute("draggable") && elementIsAnchor(el) && config.simulateAnchorClick) {
+      var clickEvt = document.createEvent("MouseEvents");
+      clickEvt.initMouseEvent("click", true, true, el.ownerDocument.defaultView, 1,
+        evt.screenX, evt.screenY, evt.clientX, evt.clientY,
+        evt.ctrlKey, evt.altKey, evt.shiftKey, evt.metaKey, 0, null);
+      el.dispatchEvent(clickEvt);
+      log("Simulating click to anchor");
+    }
+  }
+
+  // DOM helpers
+  function elementFromTouchEvent(el,event) {
+    var touch = event.changedTouches[0];
+    var target = doc.elementFromPoint(
+      touch[coordinateSystemForElementFromPoint + "X"],
+      touch[coordinateSystemForElementFromPoint + "Y"]
+    );
+    return target;
+  }
+
+  //calculate the offset position of an element (relative to the window, not the document)
+  function getOffset(el) {
+    var rect = el.getBoundingClientRect();
+    return {
+      "x": rect.left,
+      "y": rect.top
+    };
+  }
+
+  function onEvt(el, event, handler, context) {
+    if(context) {
+      handler = handler.bind(context);
+    }
+    el.addEventListener(event, handler, {passive:false});
+    return {
+      off: function() {
+        return el.removeEventListener(event, handler, {passive:false});
+      }
+    };
+  }
+
+  function once(el, event, handler, context) {
+    if(context) {
+      handler = handler.bind(context);
+    }
+    function listener(evt) {
+      handler(evt);
+      return el.removeEventListener(event,listener);
+    }
+    return el.addEventListener(event,listener);
+  }
+
+  // duplicateStyle expects dstNode to be a clone of srcNode
+  function duplicateStyle(srcNode, dstNode) {
+    // Is this node an element?
+    if (srcNode.nodeType == 1) {
+      // Remove any potential conflict attributes
+      dstNode.removeAttribute("id");
+      dstNode.removeAttribute("class");
+      dstNode.removeAttribute("style");
+      dstNode.removeAttribute("draggable");
+
+      // Clone the style
+      var cs = window.getComputedStyle(srcNode);
+      for (var i = 0; i < cs.length; i++) {
+        var csName = cs[i];
+        dstNode.style.setProperty(csName, cs.getPropertyValue(csName), cs.getPropertyPriority(csName));
+      }
+
+      // Pointer events as none makes the drag image transparent to document.elementFromPoint()
+      dstNode.style.pointerEvents = "none";
+    }
+
+    // Do the same for the children
+    if (srcNode.hasChildNodes()) {
+      for (var j = 0; j < srcNode.childNodes.length; j++) {
+        duplicateStyle(srcNode.childNodes[j], dstNode.childNodes[j]);
+      }
+    }
+  }
+
+  // general helpers
+  function log(msg) {
+    console.log(msg);
+  }
+
+  function average(arr) {
+    if (arr.length === 0) return 0;
+    return arr.reduce((function(s, v) {
+      return v + s;
+    }), 0) / arr.length;
+  }
+
+  function noop() {}
+
+  main();
+
+};
+
+if (typeof module === 'object' && typeof module.exports === 'object') {
+  module.exports = _exposeIosHtml5DragDropShim;
+} else if (typeof window !== 'undefined') {
+  _exposeIosHtml5DragDropShim(window.iosDragDropShim);
+}
+})(document);
+</script>
 
 </head>
 <body class="tc-body">
@@ -187,9 +667,17 @@ Error message and password prompt
 
 <li>$:/plugins/tiddlywiki/mobiledragdrop</li>
 
+<li>$:/plugins/tiddlywiki/savetrail</li>
+
 <li>$:/SiteSubtitle</li>
 
 <li>$:/SiteTitle</li>
+
+<li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/aws</li>
+
+<li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/blog</li>
+
+<li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/browser-storage</li>
 
 <li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/share</li>
 
@@ -9952,11 +10440,52 @@ Error message and password prompt
     }
 }</pre>
 </div>
+<div dependents="" description="Automatically download modified tiddlers" list="readme settings" name="Save Trail" plugin-type="plugin" title="$:/plugins/tiddlywiki/savetrail" type="application/json" version="5.1.22">
+<pre>{
+    &quot;tiddlers&quot;: {
+        &quot;$:/config/SaveTrailPlugin/enable-drafts&quot;: {
+            &quot;title&quot;: &quot;$:/config/SaveTrailPlugin/enable-drafts&quot;,
+            &quot;text&quot;: &quot;no&quot;
+        },
+        &quot;$:/config/SaveTrailPlugin/enable&quot;: {
+            &quot;title&quot;: &quot;$:/config/SaveTrailPlugin/enable&quot;,
+            &quot;text&quot;: &quot;yes&quot;
+        },
+        &quot;$:/config/SaveTrailPlugin/sync-drafts-filter&quot;: {
+            &quot;title&quot;: &quot;$:/config/SaveTrailPlugin/sync-drafts-filter&quot;,
+            &quot;text&quot;: &quot;[is[tiddler]has[draft.of]]&quot;
+        },
+        &quot;$:/plugins/tiddlywiki/savetrail/readme&quot;: {
+            &quot;title&quot;: &quot;$:/plugins/tiddlywiki/savetrail/readme&quot;,
+            &quot;text&quot;: &quot;This plugin causes TiddlyWiki to continuously download (as a JSON file) the contents of any tiddler that is manually changed by any of several means:\n\n* Confirming an edit\n* Deleting tiddlers\n* Imports\n* Renames/relinks\n* Optionally, typing in draft tiddlers can trigger a download\n\nWhere appropriate, separate 'before' and 'after' files are downloaded. Configured correctly, the browser will download the files silently in the background, and they can be used as a backup in case of accidental data loss.\n\n''CAUTION'': Using this plugin will generate a //lot// of files in your downloads folder! Some points to watch:\n\n* This plugin is pretty much unusable unless your browser is set up to download files automatically, without prompting for the location\n* Automatic file downloading doesn't work in all browsers - in particular, Safari and Internet Explorer do not currently support the [[necessary HTML5 feature|http://caniuse.com/download]]\n* Be aware of the privacy implications of leaving a plaintext trail of all of your edits. You should only enable this plugin on computers that your trust and with content that is not sensitive\n* The plugin uses the tiddler title plus a timestamp to generate a filename for the downloaded file, but some browsers ignore the specified title and generate their own title for each downloaded file\n\nOther points to note:\n\n* By default, after a draft tiddler has been modified the plugin waits until at least one second has elapsed since the last typing before it attempts to download the tiddler. This reduces the number of times that rapidly changing tiddlers are saved\n* This plugin can be used with both the single file HTML configuration and under Node.js because it is independent of the usual saving and syncing processes\n&quot;
+        },
+        &quot;$:/plugins/tiddlywiki/savetrail/savetrail.js&quot;: {
+            &quot;title&quot;: &quot;$:/plugins/tiddlywiki/savetrail/savetrail.js&quot;,
+            &quot;text&quot;: &quot;/*\\\ntitle: $:/plugins/tiddlywiki/savetrail/savetrail.js\ntype: application/javascript\nmodule-type: startup\n\nA startup module to download every changed tiddler as a JSON file\n\n\\*/\n(function(){\n\n/*jslint node: true, browser: true */\n/*global $tw: false */\n\&quot;use strict\&quot;;\n\n// Export name and synchronous status\nexports.name = \&quot;savetrail\&quot;;\nexports.platforms = [\&quot;browser\&quot;];\nexports.after = [\&quot;startup\&quot;];\nexports.synchronous = true;\n\n// Favicon tiddler\nvar ENABLE_TIDDLER_TITLE = \&quot;$:/config/SaveTrailPlugin/enable\&quot;,\n\tENABLE_DRAFTS_TIDDLER_TITLE = \&quot;$:/config/SaveTrailPlugin/enable-drafts\&quot;,\n\tSYNC_DRAFTS_FILTER_TIDDLER_TITLE = \&quot;$:/config/SaveTrailPlugin/sync-drafts-filter\&quot;;\n\nexports.startup = function() {\n\t$tw.savetrail = $tw.savetrail || {};\n\t// Create a syncer to handle autosaving\n\t$tw.savetrail.syncadaptor = new SaveTrailSyncAdaptor();\n\t$tw.savetrail.syncer = new $tw.Syncer({\n\t\twiki: $tw.wiki,\n\t\tsyncadaptor: $tw.savetrail.syncadaptor,\n\t\ttitleSyncFilter: SYNC_DRAFTS_FILTER_TIDDLER_TITLE,\n\t\tlogging: false,\n\t\tdisableUI: true\n\t});\n\t// Add hooks for trapping user actions\n\t$tw.hooks.addHook(\&quot;th-saving-tiddler\&quot;,function(tiddler) {\n\t\tif($tw.wiki.checkTiddlerText(ENABLE_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\t\tvar oldTiddler = $tw.wiki.getTiddler(tiddler.fields.title);\n\t\t\tif(oldTiddler) {\n\t\t\t\tsaveTiddlerFile(oldTiddler,{reason: \&quot;overwritten\&quot;});\t\t\t\n\t\t\t}\n\t\t\tsaveTiddlerFile(tiddler,{reason: \&quot;saved\&quot;});\n\t\t}\n\t\treturn tiddler;\n\t});\n\t$tw.hooks.addHook(\&quot;th-renaming-tiddler\&quot;,function(newTiddler,oldTiddler) {\n\t\tif($tw.wiki.checkTiddlerText(ENABLE_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\t\tif(oldTiddler) {\n\t\t\t\tsaveTiddlerFile(oldTiddler,{reason: \&quot;deleted\&quot;});\t\t\t\n\t\t\t}\n\t\t\tsaveTiddlerFile(newTiddler,{reason: \&quot;renamed\&quot;});\n\t\t}\n\t\treturn newTiddler;\n\t});\n\t$tw.hooks.addHook(\&quot;th-relinking-tiddler\&quot;,function(newTiddler,oldTiddler) {\n\t\tif($tw.wiki.checkTiddlerText(ENABLE_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\t\tif(oldTiddler) {\n\t\t\t\tsaveTiddlerFile(oldTiddler,{reason: \&quot;overwritten\&quot;});\t\t\t\n\t\t\t}\n\t\t\tsaveTiddlerFile(newTiddler,{reason: \&quot;relinked\&quot;});\n\t\t}\n\t\treturn newTiddler;\n\t});\n\t$tw.hooks.addHook(\&quot;th-importing-tiddler\&quot;,function(tiddler) {\n\t\tif($tw.wiki.checkTiddlerText(ENABLE_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\t\tvar oldTiddler = $tw.wiki.getTiddler(tiddler.fields.title);\n\t\t\tif(oldTiddler) {\n\t\t\t\tsaveTiddlerFile(oldTiddler,{reason: \&quot;overwritten\&quot;});\t\t\t\n\t\t\t}\n\t\t\tsaveTiddlerFile(tiddler,{reason: \&quot;imported\&quot;});\n\t\t}\n\t\treturn tiddler;\n\t});\n\t$tw.hooks.addHook(\&quot;th-deleting-tiddler\&quot;,function(tiddler) {\n\t\tif($tw.wiki.checkTiddlerText(ENABLE_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\t\tsaveTiddlerFile(tiddler,{reason: \&quot;deleted\&quot;});\n\t\t}\n\t\treturn tiddler;\n\t});\n};\n\nfunction SaveTrailSyncAdaptor(options) {\n\tthis.logger = new $tw.utils.Logger(\&quot;SaveTrail\&quot;);\n}\n\nSaveTrailSyncAdaptor.prototype.name = \&quot;savetrail\&quot;;\n\nSaveTrailSyncAdaptor.prototype.isReady = function() {\n\t// The savetrail adaptor is always ready\n\treturn true;\n};\n\nSaveTrailSyncAdaptor.prototype.getTiddlerInfo = function(tiddler) {\n\treturn {};\n};\n\n/*\nSave a tiddler and invoke the callback with (err,adaptorInfo,revision)\n*/\nSaveTrailSyncAdaptor.prototype.saveTiddler = function(tiddler,callback) {\n\tif($tw.wiki.checkTiddlerText(ENABLE_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\tvar isDraft = $tw.utils.hop(tiddler.fields,\&quot;draft.of\&quot;);\n\t\tif(!isDraft || $tw.wiki.checkTiddlerText(ENABLE_DRAFTS_TIDDLER_TITLE,\&quot;yes\&quot;)) {\n\t\t\tsaveTiddlerFile(tiddler,{reason: \&quot;modified\&quot;});\n\t\t}\n\t}\n\tcallback(null);\n};\n\n/*\nLoad a tiddler and invoke the callback with (err,tiddlerFields)\n*/\nSaveTrailSyncAdaptor.prototype.loadTiddler = function(title,callback) {\n\tcallback(null,null);\n};\n\n/*\nDelete a tiddler and invoke the callback with (err)\n*/\nSaveTrailSyncAdaptor.prototype.deleteTiddler = function(title,callback,options) {\n\tcallback(null);\n};\n\nfunction saveTiddlerFile(tiddler,options) {\n\toptions = options || {};\n\tvar reason = options.reason || \&quot;changed\&quot;,\n\t\tillegalFilenameCharacters = /&lt;|&gt;|\\:|\\\&quot;|\\/|\\\\|\\||\\?|\\*|\\^|\\s/g,\n\t\tfixedTitle = $tw.utils.transliterate(tiddler.fields.title).replace(illegalFilenameCharacters,\&quot;_\&quot;),\n\t\tformattedDate = $tw.utils.stringifyDate(new Date()),\n\t\tfilename =  fixedTitle + \&quot;.\&quot; + formattedDate + \&quot;.\&quot; + reason + \&quot;.json\&quot;,\n\t\tfields = new Object();\n\tfor(var field in tiddler.fields) {\n\t\tfields[field] = tiddler.getFieldString(field);\n\t}\n\tvar text = JSON.stringify([fields],null,$tw.config.preferences.jsonSpaces),\n\t\tlink = document.createElement(\&quot;a\&quot;);\n\tlink.setAttribute(\&quot;target\&quot;,\&quot;_blank\&quot;);\n\tlink.setAttribute(\&quot;rel\&quot;,\&quot;noopener noreferrer\&quot;);\n\tif(Blob !== undefined) {\n\t\tvar blob = new Blob([text], {type: \&quot;text/plain\&quot;});\n\t\tlink.setAttribute(\&quot;href\&quot;, URL.createObjectURL(blob));\n\t} else {\n\t\tlink.setAttribute(\&quot;href\&quot;,\&quot;data:text/plain,\&quot; + encodeURIComponent(text));\n\t}\n\tlink.setAttribute(\&quot;download\&quot;,filename);\n\tdocument.body.appendChild(link);\n\tlink.click();\n\tdocument.body.removeChild(link);\n}\n\n})();\n&quot;,
+            &quot;type&quot;: &quot;application/javascript&quot;,
+            &quot;module-type&quot;: &quot;startup&quot;
+        },
+        &quot;$:/plugins/tiddlywiki/savetrail/settings&quot;: {
+            &quot;title&quot;: &quot;$:/plugins/tiddlywiki/savetrail/settings&quot;,
+            &quot;text&quot;: &quot;\n&lt;$checkbox tiddler=\&quot;$:/config/SaveTrailPlugin/enable\&quot; field=\&quot;text\&quot; checked=\&quot;yes\&quot; unchecked=\&quot;no\&quot;&gt; Enable automatic saving of modified tiddlers&lt;/$checkbox&gt;\n\n&lt;$checkbox tiddler=\&quot;$:/config/SaveTrailPlugin/enable-drafts\&quot; field=\&quot;text\&quot; checked=\&quot;yes\&quot; unchecked=\&quot;no\&quot;&gt; Include automatic saving of draft tiddlers (warning: generates a lot of download files)&lt;/$checkbox&gt;\n&quot;
+        }
+    }
+}</pre>
+</div>
 <div created="20200928025547886" creator="Rabi" modified="20200928025839379" modifier="Rabi" title="$:/SiteSubtitle">
 <pre>42 Nites</pre>
 </div>
 <div created="20200928025459642" modified="20200928025648936" title="$:/SiteTitle">
 <pre>42=∞</pre>
+</div>
+<div created="20200929154046895" creator="Rabi" modified="20200929154046895" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/aws">
+<pre>yes</pre>
+</div>
+<div created="20200929154122164" creator="Rabi" modified="20200929154123263" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/blog">
+<pre>no</pre>
+</div>
+<div created="20200929154053085" creator="Rabi" modified="20200929154119679" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/browser-storage">
+<pre>no</pre>
 </div>
 <div created="20200929153931060" creator="Rabi" modified="20200929153938577" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/share">
 <pre>no</pre>
@@ -9988,8 +10517,8 @@ Error message and password prompt
 <div created="20200928033713456" creator="Rabi" modified="20200928153455165" modifier="Rabi" title="$:/state/plugin-info--649320222-$:/themes/tiddlywiki/starlight">
 <pre>yes</pre>
 </div>
-<div created="20200928031528293" creator="Rabi" modified="20200928033546195" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/core">
-<pre>yes</pre>
+<div created="20200928031528293" creator="Rabi" modified="20200929154031303" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/core">
+<pre>no</pre>
 </div>
 <div created="20200928053536418" creator="Rabi" modified="20200928053536418" modifier="Rabi" title="$:/state/showeditpreview">
 <pre>yes</pre>
@@ -10003,7 +10532,7 @@ Error message and password prompt
 <div created="20200928033205941" creator="Rabi" modified="20200929153322983" modifier="Rabi" title="$:/state/tab--2112689675">
 <pre>$:/core/ui/ControlPanel/Basics</pre>
 </div>
-<div created="20200928033559685" creator="Rabi" modified="20200929153909119" modifier="Rabi" title="$:/state/tab--219645345">
+<div created="20200928033559685" creator="Rabi" modified="20200929154040880" modifier="Rabi" title="$:/state/tab--219645345">
 <pre>$:/core/ui/ControlPanel/Plugins/Add/Plugins</pre>
 </div>
 <div created="20200928031520878" creator="Rabi" modified="20200929153857913" modifier="Rabi" title="$:/state/tab--86143343">
@@ -11047,7 +11576,7 @@ This plugin also requires the JSZip plugin ([[$:/plugins/tiddlywiki/jszip]]) to 
 <div created="20200928031545559" creator="Rabi" modified="20200928051809309" modifier="Rabi" title="$:/temp/search">
 <pre></pre>
 </div>
-<div created="20200929153904979" creator="Rabi" modified="20200929153904979" modifier="Rabi" tags="$:/tags/ServerConnection" title="$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html" url="https://tiddlywiki.com/library/v5.1.22/index.html">
+<div created="20200929154319229" creator="Rabi" modified="20200929154319229" modifier="Rabi" tags="$:/tags/ServerConnection" title="$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html" url="https://tiddlywiki.com/library/v5.1.22/index.html">
 <pre>loaded</pre>
 </div>
 <div created="20200928033743736" creator="Rabi" modified="20200929153259047" modifier="Rabi" title="$:/theme">
