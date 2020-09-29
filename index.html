@@ -623,6 +623,10 @@ Error message and password prompt
 
 <li>$:/config/AutoFocus</li>
 
+<li>$:/config/Comments/EnableFilter</li>
+
+<li>$:/config/Comments/EnableWikiComments</li>
+
 <li>$:/config/Navigation/UpdateAddressBar</li>
 
 <li>$:/config/NewJournal/Tags</li>
@@ -687,7 +691,11 @@ Error message and password prompt
 
 <li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/cecily</li>
 
+<li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/d3</li>
+
 <li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/dynannotate</li>
+
+<li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/filesystem</li>
 
 <li>$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/freelinks</li>
 
@@ -722,6 +730,16 @@ Error message and password prompt
 <li>$:/state/plugin-info--649320222-$:/themes/tiddlywiki/starlight</li>
 
 <li>$:/state/plugin-info--896887961-$:/core</li>
+
+<li>$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/comments</li>
+
+<li>$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/comments--1108022443</li>
+
+<li>$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/freelinks</li>
+
+<li>$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/freelinks---1470748590</li>
+
+<li>$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/mobiledragdrop</li>
 
 <li>$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/savetrail</li>
 
@@ -1001,6 +1019,12 @@ Error message and password prompt
 <div id="storeArea" style="display:none;">
 <div created="20200928152410365" creator="Rabi" modified="20200928152412368" modifier="Rabi" title="$:/config/AutoFocus">
 <pre>text</pre>
+</div>
+<div created="20200929155426361" creator="Rabi" modified="20200929155702270" modifier="Rabi" title="$:/config/Comments/EnableFilter">
+<pre>[all[current]!is[system]!tag[nocomments]]</pre>
+</div>
+<div created="20200929155403276" creator="Rabi" modified="20200929155403276" modifier="Rabi" title="$:/config/Comments/EnableWikiComments">
+<pre>yes</pre>
 </div>
 <div created="20200928153537071" creator="Rabi" modified="20200928153537071" modifier="Rabi" title="$:/config/Navigation/UpdateAddressBar">
 <pre>permalink</pre>
@@ -10672,8 +10696,14 @@ Error message and password prompt
 <div created="20200929154829512" creator="Rabi" modified="20200929154829512" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/cecily">
 <pre>yes</pre>
 </div>
-<div created="20200929154607769" creator="Rabi" modified="20200929154607770" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/dynannotate">
-<pre>yes</pre>
+<div created="20200929155021966" creator="Rabi" modified="20200929155023333" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/d3">
+<pre>no</pre>
+</div>
+<div created="20200929154607769" creator="Rabi" modified="20200929155019234" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/dynannotate">
+<pre>no</pre>
+</div>
+<div created="20200929155031374" creator="Rabi" modified="20200929155039287" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/filesystem">
+<pre>no</pre>
 </div>
 <div created="20200929154535889" creator="Rabi" modified="20200929154546046" modifier="Rabi" title="$:/state/add-plugin-info/$:/temp/ServerConnection/https://tiddlywiki.com/library/v5.1.22/index.html/$:/temp/RemoteAssetInfo/https://tiddlywiki.com/library/v5.1.22/index.html/$:/plugins/tiddlywiki/freelinks">
 <pre>no</pre>
@@ -10726,11 +10756,26 @@ Error message and password prompt
 <div created="20200928031528293" creator="Rabi" modified="20200929154031303" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/core">
 <pre>no</pre>
 </div>
-<div created="20200929154354350" creator="Rabi" modified="20200929154411673" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/savetrail">
+<div created="20200929155322512" creator="Rabi" modified="20200929155322513" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/comments">
+<pre>yes</pre>
+</div>
+<div created="20200929155349112" creator="Rabi" modified="20200929155349112" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/comments--1108022443">
+<pre>config</pre>
+</div>
+<div created="20200929155315373" creator="Rabi" modified="20200929155315373" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/freelinks">
+<pre>yes</pre>
+</div>
+<div created="20200929155316976" creator="Rabi" modified="20200929155316976" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/freelinks---1470748590">
+<pre>settings</pre>
+</div>
+<div created="20200929155235800" creator="Rabi" modified="20200929155314517" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/mobiledragdrop">
 <pre>no</pre>
 </div>
-<div created="20200929154355870" creator="Rabi" modified="20200929154408101" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/savetrail--1094954230">
-<pre>readme</pre>
+<div created="20200929154354350" creator="Rabi" modified="20200929155310288" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/savetrail">
+<pre>no</pre>
+</div>
+<div created="20200929154355870" creator="Rabi" modified="20200929155233029" modifier="Rabi" title="$:/state/plugin-info--896887961-$:/plugins/tiddlywiki/savetrail--1094954230">
+<pre>settings</pre>
 </div>
 <div created="20200928053536418" creator="Rabi" modified="20200928053536418" modifier="Rabi" title="$:/state/showeditpreview">
 <pre>yes</pre>
@@ -10769,12 +10814,12 @@ Error message and password prompt
 <pre>$:/core/ui/SideBar/Open</pre>
 </div>
 <div title="$:/status/RequireReloadDueToPluginChange">
-<pre>yes</pre>
+<pre>no</pre>
 </div>
 <div created="20200928025825864" creator="R" modified="20200928025827010" modifier="Rab" title="$:/status/UserName">
 <pre>Rabi</pre>
 </div>
-<div list="$:/ControlPanel" title="$:/StoryList">
+<div created="20200929154936194" creator="Rabi" list="$:/ControlPanel Hello" modified="20200929155357886" modifier="Rabi" title="$:/StoryList">
 <pre></pre>
 </div>
 <div plugin-type="info" title="$:/temp/info-plugin" type="application/json">
